@@ -13,11 +13,11 @@ timeout=10
 
 #SQS variable
 SqsName = 'iad-na-prod-awx_handler_dead_letter_queue'
-MaxNumberOfMessages = 10
+MaxNumberOfMessages = 1
 
 event_messages = []
 iad_tags = {}
-list_of_skipping_component = ['import','gaimport']
+list_of_skipping_component = []
 
 boto3.setup_default_session(profile_name='iad_prod')
 sqs = boto3.resource('sqs', region_name ='us-east-2')
@@ -27,21 +27,19 @@ def read_sqs(MaxNumberOfMessages):
     queue = sqs.get_queue_by_name(QueueName=SqsName)
     messages = queue.receive_messages(MaxNumberOfMessages=MaxNumberOfMessages, WaitTimeSeconds=2)
     count = 0
-    while len(messages)>0:
-        for message in messages:
-            count += 1
-            print(count)
-            body = json.loads(message.body)
-            environment = body['extra_vars']['iad_environment']
-            component = body['extra_vars']['iad_component']
-            dict_key = environment+component
-            create_iad_items = {'iad_environment' : environment,
-                                'iad_component': component}
-            iad_tags[dict_key] = create_iad_items
-            # Confition whether re-install this component
-            if component not in list_of_skipping_component:
-               event_messages.append(body)
-            messages = queue.receive_messages(MaxNumberOfMessages=MaxNumberOfMessages)
+    for message in messages:
+        count += 1
+        body = json.loads(message.body)
+        environment = body['extra_vars']['iad_environment']
+        component = body['extra_vars']['iad_component']
+        dict_key = environment+component
+        create_iad_items = {'iad_environment' : environment,
+                            'iad_component': component}
+        iad_tags[dict_key] = create_iad_items
+        # Confition whether re-install this component
+        if component not in list_of_skipping_component:
+           event_messages.append(body)
+        messages = queue.receive_messages(MaxNumberOfMessages=MaxNumberOfMessages)
 
     return iad_tags, event_messages
 
@@ -68,5 +66,6 @@ def run_awx_template(awx_url, awx_token, awx_initial_template_type, awx_initial_
 iad_tags, event_messages = read_sqs(MaxNumberOfMessages)
 
 for _ in event_messages:
+    print(_)
     job_url = run_awx_template(AwxUrl, AwxToken, AwxInitialTemplateType, AwxInitialTemplateName, _, timeout)
     time.sleep(120)
